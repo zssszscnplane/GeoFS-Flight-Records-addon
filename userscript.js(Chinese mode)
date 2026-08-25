@@ -1,0 +1,254 @@
+// ==UserScript==
+// @name         GeoFS-Flight-records-addon
+// @namespace    http://tampermonkey.net/
+// @version      1.0
+// @description  none
+// @author       Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ GitHub-zssszscnplane
+// @match        https://www.geo-fs.com/geofs.php*
+// @match        https://*.geo-fs.com/geofs.php*
+// @grant        none
+// @run-at       document-idle
+// ==/UserScript==
+
+
+    var currentLanguage = '简体中文';
+
+    var languageMap = {
+        '简体中文': {
+            '请输入文字': '请输入文字',
+            '查看作者': '查看作者',
+            'GeoFS 航线记录': 'GeoFS 航线记录',
+            '由 Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ Github-zssszscnplane 制作': '由 Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ Github-zssszscnplane 制作',
+            '|    状态    |    完成时间    |    是否完成    |    花费时间    |': '|    状态    |    完成时间    |    是否完成    |    花费时间    |',
+            '例子：| 上机 | 1600 | √ | 60 |': '例子：| 上机 | 1600 | √ | 60 |',
+            '例子：| 起飞前滑行 | 1610 | √ | 10 |': '例子：| 起飞前滑行 | 1610 | √ | 10 |',
+            '例子：| 起飞 | 1615 | √ | -- |': '例子：| 起飞 | 1615 | √ | -- |',
+            '例子：| 巡航 | 1715 | √ | 35 |': '例子：| 巡航 | 1715 | √ | 35 |',
+            '例子：| 降落 | 1718 | √ | -- |': '例子：| 降落 | 1718 | √ | -- |',
+            '例子：| 降落后滑行 | 1728 | √ | 10 |': '例子：| 降落后滑行 | 1728 | √ | 10 |',
+            '例子：| 停机 | 1729 | √ | -- |': '例子：| 停机 | 1729 | √ | -- |',
+            '例子：| 下机 | 1800 | √ | 31 |': '例子：| 下机 | 1800 | √ | 31 |',
+            '目的地(ICTO)': '目的地(ICTO)',
+            '始发地(ICTO)': '始发地(ICTO)',
+            '航班号': '航班号',
+            '导出航班记录' : '导出航班记录'
+        },
+    };
+    // 创建UI元素
+    var soundButton = document.createElement('div');
+    soundButton.id = 'Flight records';
+    soundButton.textContent = 'Records';
+    soundButton.style.position = 'fixed';
+    soundButton.style.bottom = '130px';
+    soundButton.style.right = '30px';
+    soundButton.style.backgroundColor = 'white';
+    soundButton.style.color = 'black';
+    soundButton.style.padding = '10px 20px';
+    soundButton.style.borderRadius = '5px';
+    soundButton.style.cursor = 'pointer';
+    soundButton.style.boxShadow = '0 2px 5px rgba(0, 0, 0, 0.2)';
+    soundButton.style.zIndex = '9999';
+    document.body.appendChild(soundButton);
+
+    var recordsMenu = document.createElement('div');
+    recordsMenu.id = 'sound-menu';
+    recordsMenu.style.position = 'fixed';
+    recordsMenu.style.bottom = '200px';
+    recordsMenu.style.right = '30px';
+    recordsMenu.style.width = '300px';
+    recordsMenu.style.backgroundColor = 'white';
+    recordsMenu.style.color = 'black';
+    recordsMenu.style.padding = '20px';
+    recordsMenu.style.borderRadius = '5px';
+    recordsMenu.style.boxShadow = '0 2px 5px rgba(0, 0, 0, 0.2)';
+    recordsMenu.style.display = 'none';
+    recordsMenu.style.maxHeight = '400px';
+    recordsMenu.style.overflowY = 'auto';
+    recordsMenu.style.zIndex = '9999';
+    document.body.appendChild(recordsMenu);
+
+    var menuTitle = document.createElement('h1');
+    menuTitle.textContent = 'GeoFS 航班记录';
+    menuTitle.style.fontSize = '18px';
+    menuTitle.style.marginBottom = '10px';
+    recordsMenu.appendChild(menuTitle);
+
+    var menuSubtitle = document.createElement('h2');
+    menuSubtitle.textContent = '由 Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ Github-zssszscnplane 制作';
+    menuSubtitle.style.fontSize = '14px';
+    menuSubtitle.style.marginBottom = '30px';
+    menuSubtitle.style.color = '#666';
+    recordsMenu.appendChild(menuSubtitle);
+
+    var Idonnmenu = document.createElement('h3');
+    Idonnmenu.textContent = '-------------GeoFS 航线记录----------------';
+    Idonnmenu.style.fontSize = '13px';
+    Idonnmenu.style.marginBottom = '20px';
+    Idonnmenu.style.color = '#ff';
+    recordsMenu.appendChild(Idonnmenu);
+
+    var fromInput = document.createElement('input');
+    fromInput.type = 'text';
+    fromInput.id = 'from-Input';
+    fromInput.placeholder = languageMap[currentLanguage]['始发地(ICTO)'];
+    fromInput.style.width = '100%';
+    fromInput.style.marginBottom = '5px';
+    recordsMenu.appendChild(fromInput);
+
+    var destinationInput = document.createElement('input');
+    destinationInput.type = 'text';
+    destinationInput.id = 'destination-Input';
+    destinationInput.placeholder = languageMap[currentLanguage]['目的地(ICTO)'];
+    destinationInput.style.width = '100%';
+    destinationInput.style.marginBottom = '5px';
+    recordsMenu.appendChild(destinationInput);
+
+    var flightnumberInput = document.createElement('input');
+    flightnumberInput.type = 'text';
+    flightnumberInput.id = 'flight-number-Input';
+    flightnumberInput.placeholder = languageMap[currentLanguage]['航班号'];
+    flightnumberInput.style.width = '100%';
+    flightnumberInput.style.marginBottom = '5px';
+    recordsMenu.appendChild(flightnumberInput);
+
+    var egmenu = document.createElement('h5');
+    egmenu.textContent = '|    状态    |    完成时间    |    是否完成    |    花费时间    |';
+    egmenu.style.fontSize = '15px';
+    egmenu.style.marginBottom = '5px';
+    egmenu.style.color = '#ff';
+    recordsMenu.appendChild(egmenu);
+
+    var boardtimeInput = document.createElement('input');
+    boardtimeInput.type = 'text';
+    boardtimeInput.id = 'board-time-Input';
+    boardtimeInput.placeholder = languageMap[currentLanguage]['例子：| 上机 | 1600 | √ | 60 |'];
+    boardtimeInput.style.width = '100%';
+    boardtimeInput.style.marginBottom = '4px';
+    recordsMenu.appendChild(boardtimeInput);
+
+    var taxitimeInput = document.createElement('input');
+    taxitimeInput.type = 'text';
+    taxitimeInput.id = 'board-time-Input';
+    taxitimeInput.placeholder = languageMap[currentLanguage]['例子：| 起飞前滑行 | 1610 | √ | 10 |'];
+    taxitimeInput.style.width = '100%';
+    taxitimeInput.style.marginBottom = '4px';
+    recordsMenu.appendChild(taxitimeInput);
+
+    var takeofftimeInput = document.createElement('input');
+    takeofftimeInput.type = 'text';
+    takeofftimeInput.id = 'take-off-time-Input';
+    takeofftimeInput.placeholder = languageMap[currentLanguage]['例子：| 起飞 | 1615 | √ | -- |'];
+    takeofftimeInput.style.width = '100%';
+    takeofftimeInput.style.marginBottom = '4px';
+    recordsMenu.appendChild(takeofftimeInput);
+
+    var cruisetimeInput = document.createElement('input');
+    cruisetimeInput.type = 'text';
+    cruisetimeInput.id = 'cruise-time-Input';
+    cruisetimeInput.placeholder = languageMap[currentLanguage]['例子：| 巡航 | 1715 | √ | 35 |'];
+    cruisetimeInput.style.width = '100%';
+    cruisetimeInput.style.marginBottom = '4px';
+    recordsMenu.appendChild(cruisetimeInput);
+
+    var landingtimeInput = document.createElement('input');
+    landingtimeInput.type = 'text';
+    landingtimeInput.id = 'landing-time-Input';
+    landingtimeInput.placeholder = languageMap[currentLanguage]['例子：| 降落 | 1718 | √ | -- |'];
+    landingtimeInput.style.width = '100%';
+    landingtimeInput.style.marginBottom = '4px';
+    recordsMenu.appendChild(landingtimeInput);
+
+    var taxi2timeInput = document.createElement('input');
+    taxi2timeInput.type = 'text';
+    taxi2timeInput.id = 'taxi-2-time-Input';
+    taxi2timeInput.placeholder = languageMap[currentLanguage]['例子：| 降落后滑行 | 1728 | √ | 10 |'];
+    taxi2timeInput.style.width = '100%';
+    taxi2timeInput.style.marginBottom = '4px';
+    recordsMenu.appendChild(taxi2timeInput);
+
+    var parkingtimeInput = document.createElement('input');
+    parkingtimeInput.type = 'text';
+    parkingtimeInput.id = 'parking-time-Input';
+    parkingtimeInput.placeholder = languageMap[currentLanguage]['例子：| 停机 | 1729 | √ | -- |'];
+    parkingtimeInput.style.width = '100%';
+    parkingtimeInput.style.marginBottom = '4px';
+    recordsMenu.appendChild(parkingtimeInput);
+
+    var deplanetimeInput = document.createElement('input');
+    deplanetimeInput.type = 'text';
+    deplanetimeInput.id = 'deplane-time-Input';
+    deplanetimeInput.placeholder = languageMap[currentLanguage]['例子：| 下机 | 1800 | √ | 31 |'];
+    deplanetimeInput.style.width = '100%';
+    deplanetimeInput.style.marginBottom = '4px';
+    recordsMenu.appendChild(deplanetimeInput);
+
+function toggleMenu() {
+    var menu = document.getElementById('sound-menu');
+    if (menu.style.display === 'none' || menu.style.display === '') {
+        menu.style.display = 'block';
+    } else {
+        menu.style.display = 'none';
+    }
+}
+
+// Add Visit the author section
+var visitAuthorSection = document.createElement('div');
+visitAuthorSection.id = 'visit-author-section';
+visitAuthorSection.style.marginTop = '20px';
+visitAuthorSection.style.textAlign = 'center';
+visitAuthorSection.style.fontSize = '12px';
+visitAuthorSection.style.color = '#666';
+recordsMenu.appendChild(visitAuthorSection);
+
+var visitAuthorTitle = document.createElement('h3');
+visitAuthorTitle.textContent = languageMap[currentLanguage]['查看作者'];
+visitAuthorTitle.style.marginBottom = '5px';
+visitAuthorSection.appendChild(visitAuthorTitle);
+
+var bilibiliLink = document.createElement('img');
+bilibiliLink.src = 'https://i.ibb.co/WBXZKn9/bl.png';
+bilibiliLink.alt = 'Bilibili Link';
+bilibiliLink.style.width = '45px';
+bilibiliLink.style.height = 'auto';
+bilibiliLink.style.marginRight = '10px';
+bilibiliLink.style.cursor = 'pointer';
+bilibiliLink.addEventListener('click', function() {
+    window.open('https://space.bilibili.com/3546746969917664?spm_id_from=333.1007.0.0', '_blank');
+});
+visitAuthorSection.appendChild(bilibiliLink);
+
+var XiaohongshuLink = document.createElement('img');
+XiaohongshuLink.src = 'https://kkimgs.yisou.com/ims?kt=url&at=ori&key=aHR0cHM6Ly9nZC1oYmltZy5odWFiYW4uY29tLzM3ZTExN2Q5NTMyMzRiZTIwNWVkNjc1MTA4Y2MyYjE0YTA5YmY1MTk3NTEzLUxaeGZhVV9mdzY1OHdlYnA=&sign=yx:u_y-cWwaQKX3p7VBMONcYApvB4c=&tv=0_0';
+XiaohongshuLink.alt = 'Xiaohongshu Link';
+XiaohongshuLink.style.width = '45px';
+XiaohongshuLink.style.height = 'auto';
+XiaohongshuLink.style.cursor = 'pointer';
+XiaohongshuLink.addEventListener('click', function() {
+    window.open('https://www.xiaohongshu.com/user/profile/67f26ec0000000000e011a93', '_blank');
+});
+visitAuthorSection.appendChild(XiaohongshuLink);
+
+var GithubLink = document.createElement('img');
+GithubLink.src = 'https://kkimgs.yisou.com/ims?kt=url&at=ori&key=aHR0cHM6Ly9ia2ltZy5jZG4uYmNlYm9zLmNvbS9waWMvZjYzNmFmYzM3OTMxMGE1NWIzMTkwOTE5NDgxMzU0YTk4MjI2Y2VmY2JhOWQ=&sign=yx:QpJGpxLIDm1YFkekJwiiD72Dzpw=&tv=0_0';
+GithubLink.alt = 'Github Link';
+GithubLink.style.width = '45px';
+GithubLink.style.height = 'auto';
+GithubLink.style.cursor = 'pointer';
+GithubLink.addEventListener('click', function() {
+    window.open('https://github.com/zssszscnplane', '_blank');
+});
+visitAuthorSection.appendChild(GithubLink);
+
+
+soundButton.addEventListener('click', function(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    console.log('records button clicked');
+    toggleMenu();
+});
+
+document.addEventListener('keydown', function(event) {
+    if (event.altKey && event.key === 'y') {
+        toggleMenu();
+    }
+});
