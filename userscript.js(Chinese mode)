@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         GeoFS-Flight-records-addon
 // @namespace    http://tampermonkey.net/
-// @version      1.2
-// @description  GeoFS 航线记录（导出/导入 JSON）
+// @version      1.3
+// @description  GeoFS Flight Records (Export/Import JSON) - with source pairing check
 // @author       Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ GitHub-zssszscnplane
 // @match        https://www.geo-fs.com/geofs.php*
 // @match        https://*.geo-fs.com/geofs.php*
@@ -13,462 +13,559 @@
 (function() {
     'use strict';
 
-    var currentLanguage = '简体中文';
+    //
+    // ==== 配对校验设置（必须根据仓库中实际放的 token 同步修改） ====
+    //
+    // RAW 文件 URL（注意文件名已做 URL 编码）
+    var SOURCE_RAW_URL = 'https://raw.githubusercontent.com/zssszscnplane/GeoFS-Flight-Records-addon/main/userscript.js%28Chinese%20mode%29';
+    // 本地期望的 token（你需要在仓库文件顶部也写上同样的一行注释：// SOURCE_TOKEN: SOURCE_TOKEN:v1.3）
+    var SOURCE_TOKEN = 'SOURCE_TOKEN:v1.3';
+    // ============================================================
 
-    var languageMap = {
-        '简体中文': {
-            '请输入文字': '请输入文字',
-            '查看作者': '查看作者',
-            'GeoFS 航线记录': 'GeoFS 航班记录',
-            '由 Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ Github-zssszscnplane 制作': '由 Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ Github-zssszscnplane 制作',
-            '|    状态    |    完成时间    |    是否完成    |    花费时间    |': '|    状态    |    完成时间    |    是否完成    |    花费时间    |',
-            '例子：| 上机 | 1600 | √ | 60 |': '例子：| 上机 | 1600 | √ | 60 |',
-            '例子：| 起飞前滑行 | 1610 | √ | 10 |': '例子：| 起飞前滑行 | 1610 | √ | 10 |',
-            '例子：| 起飞 | 1615 | √ | -- |': '例子：| 起飞 | 1615 | √ | -- |',
-            '例子：| 巡航 | 1715 | √ | 35 |': '例子：| 巡航 | 1715 | √ | 35 |',
-            '例子：| 降落 | 1718 | √ | -- |': '例子：| 降落 | 1718 | √ | -- |',
-            '例子：| 降落后滑行 | 1728 | √ | 10 |': '例子：| 降落后滑行 | 1728 | √ | 10 |',
-            '例子：| 停机 | 1729 | √ | -- |': '例子：| 停机 | 1729 | √ | -- |',
-            '例子：| 下机 | 1800 | √ | 31 |': '例子：| 下机 | 1800 | √ | 31 |',
-            '目的地(ICTO)': '目的地(ICTO)',
-            '始发地(ICTO)': '始发地(ICTO)',
-            '航班号': '航班号',
-            '导出航班记录' : '导出航班记录',
-            '导入航班记录' : '导入航班记录',
-            '导入成功': '导入成功',
-            '导入失败: 非法 JSON 或 结构不匹配': '导入失败: 非法 JSON 或 结构不匹配'
-        },
-    };
+    // 如果验证失败，调用此函数禁用 UI 并显示提示
+    function disableWithMessage(message) {
+        console.warn('GeoFS Flight Records - disabled:', message);
 
-    // 创建UI元素
-    var soundButton = document.createElement('div');
-    soundButton.id = 'flight-records-button';
-    soundButton.textContent = 'Records';
-    soundButton.style.position = 'fixed';
-    soundButton.style.bottom = '130px';
-    soundButton.style.right = '30px';
-    soundButton.style.backgroundColor = 'white';
-    soundButton.style.color = 'black';
-    soundButton.style.padding = '10px 20px';
-    soundButton.style.borderRadius = '5px';
-    soundButton.style.cursor = 'pointer';
-    soundButton.style.boxShadow = '0 2px 5px rgba(0, 0, 0, 0.2)';
-    soundButton.style.zIndex = '9999';
-    document.body.appendChild(soundButton);
+        // 移除/隐藏已有的 UI（如果已经被创建）
+        var existingBtn = document.getElementById('flight-records-button');
+        if (existingBtn) existingBtn.remove();
+        var existingMenu = document.getElementById('records-menu');
+        if (existingMenu) existingMenu.remove();
 
-    var recordsMenu = document.createElement('div');
-    recordsMenu.id = 'records-menu';
-    recordsMenu.style.position = 'fixed';
-    recordsMenu.style.bottom = '200px';
-    recordsMenu.style.right = '30px';
-    recordsMenu.style.width = '320px';
-    recordsMenu.style.backgroundColor = 'white';
-    recordsMenu.style.color = 'black';
-    recordsMenu.style.padding = '20px';
-    recordsMenu.style.borderRadius = '5px';
-    recordsMenu.style.boxShadow = '0 2px 5px rgba(0, 0, 0, 0.2)';
-    recordsMenu.style.display = 'none';
-    recordsMenu.style.maxHeight = '420px';
-    recordsMenu.style.overflowY = 'auto';
-    recordsMenu.style.zIndex = '9999';
-    document.body.appendChild(recordsMenu);
+        // 创建覆盖层提示用户获取正版
+        var overlay = document.createElement('div');
+        overlay.id = 'geoFS-protect-overlay';
+        overlay.style.position = 'fixed';
+        overlay.style.left = '0';
+        overlay.style.top = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.backgroundColor = 'rgba(0,0,0,0.65)';
+        overlay.style.color = '#fff';
+        overlay.style.zIndex = '999999';
+        overlay.style.display = 'flex';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        overlay.style.flexDirection = 'column';
+        overlay.style.textAlign = 'center';
+        overlay.style.padding = '20px';
+        overlay.innerHTML = '<div style="max-width:720px;">' +
+            '<h2 style="margin:0 0 8px 0;">GeoFS Flight Records - Unauthorized copy</h2>' +
+            '<p style="margin:0 0 12px 0;">This userscript could not verify it matches the official source and therefore has been disabled.</p>' +
+            '<p style="margin:0 0 12px 0;">Message: ' + (message || 'source mismatch') + '</p>' +
+            '<p style="margin:0 0 12px 0;">Get the official script from:<br><a href="https://github.com/zssszscnplane/GeoFS-Flight-Records-addon/blob/main/userscript.js(Chinese%20mode)" target="_blank" style="color:#9fdcff;">Official GitHub page</a></p>' +
+            '<button id="geoFS-protect-overlay-close" style="margin-top:12px;padding:8px 12px;border-radius:4px;border:none;cursor:pointer;">Close overlay</button>' +
+            '</div>';
+        document.body.appendChild(overlay);
 
-    var menuTitle = document.createElement('h1');
-    menuTitle.textContent = languageMap[currentLanguage]['GeoFS 航线记录'];
-    menuTitle.style.fontSize = '18px';
-    menuTitle.style.marginBottom = '10px';
-    recordsMenu.appendChild(menuTitle);
-
-    var menuSubtitle = document.createElement('h2');
-    menuSubtitle.textContent = languageMap[currentLanguage]['由 Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ Github-zssszscnplane 制作'];
-    menuSubtitle.style.fontSize = '13px';
-    menuSubtitle.style.marginBottom = '18px';
-    menuSubtitle.style.color = '#666';
-    recordsMenu.appendChild(menuSubtitle);
-
-    var Idonnmenu = document.createElement('h3');
-    Idonnmenu.textContent = '-------------GeoFS 航线记录----------------';
-    Idonnmenu.style.fontSize = '13px';
-    Idonnmenu.style.marginBottom = '10px';
-    Idonnmenu.style.color = '#000'; // 改为黑色
-    recordsMenu.appendChild(Idonnmenu);
-
-    var fromInput = document.createElement('input');
-    fromInput.type = 'text';
-    fromInput.id = 'from-Input';
-    fromInput.placeholder = languageMap[currentLanguage]['始发地(ICTO)'];
-    fromInput.style.width = '100%';
-    fromInput.style.marginBottom = '6px';
-    recordsMenu.appendChild(fromInput);
-
-    var destinationInput = document.createElement('input');
-    destinationInput.type = 'text';
-    destinationInput.id = 'destination-Input';
-    destinationInput.placeholder = languageMap[currentLanguage]['目的地(ICTO)'];
-    destinationInput.style.width = '100%';
-    destinationInput.style.marginBottom = '6px';
-    recordsMenu.appendChild(destinationInput);
-
-    var flightnumberInput = document.createElement('input');
-    flightnumberInput.type = 'text';
-    flightnumberInput.id = 'flight-number-Input';
-    flightnumberInput.placeholder = languageMap[currentLanguage]['航班号'];
-    flightnumberInput.style.width = '100%';
-    flightnumberInput.style.marginBottom = '6px';
-    recordsMenu.appendChild(flightnumberInput);
-
-    var egmenu = document.createElement('h5');
-    egmenu.textContent = languageMap[currentLanguage]['|    状态    |    完成时间    |    是否完成    |    花费时间    |'];
-    egmenu.style.fontSize = '14px';
-    egmenu.style.marginBottom = '6px';
-    egmenu.style.color = '#000'; // 改为黑色
-    recordsMenu.appendChild(egmenu);
-
-    var boardtimeInput = document.createElement('input');
-    boardtimeInput.type = 'text';
-    boardtimeInput.id = 'board-time-Input';
-    boardtimeInput.placeholder = languageMap[currentLanguage]['例子：| 上机 | 1600 | √ | 60 |'];
-    boardtimeInput.style.width = '100%';
-    boardtimeInput.style.marginBottom = '4px';
-    recordsMenu.appendChild(boardtimeInput);
-
-    var taxitimeInput = document.createElement('input');
-    taxitimeInput.type = 'text';
-    taxitimeInput.id = 'taxi-time-Input';
-    taxitimeInput.placeholder = languageMap[currentLanguage]['例子：| 起飞前滑行 | 1610 | √ | 10 |'];
-    taxitimeInput.style.width = '100%';
-    taxitimeInput.style.marginBottom = '4px';
-    recordsMenu.appendChild(taxitimeInput);
-
-    var takeofftimeInput = document.createElement('input');
-    takeofftimeInput.type = 'text';
-    takeofftimeInput.id = 'take-off-time-Input';
-    takeofftimeInput.placeholder = languageMap[currentLanguage]['例子：| 起飞 | 1615 | √ | -- |'];
-    takeofftimeInput.style.width = '100%';
-    takeofftimeInput.style.marginBottom = '4px';
-    recordsMenu.appendChild(takeofftimeInput);
-
-    var cruisetimeInput = document.createElement('input');
-    cruisetimeInput.type = 'text';
-    cruisetimeInput.id = 'cruise-time-Input';
-    cruisetimeInput.placeholder = languageMap[currentLanguage]['例子：| 巡航 | 1715 | √ | 35 |'];
-    cruisetimeInput.style.width = '100%';
-    cruisetimeInput.style.marginBottom = '4px';
-    recordsMenu.appendChild(cruisetimeInput);
-
-    var landingtimeInput = document.createElement('input');
-    landingtimeInput.type = 'text';
-    landingtimeInput.id = 'landing-time-Input';
-    landingtimeInput.placeholder = languageMap[currentLanguage]['例子：| 降落 | 1718 | √ | -- |'];
-    landingtimeInput.style.width = '100%';
-    landingtimeInput.style.marginBottom = '4px';
-    recordsMenu.appendChild(landingtimeInput);
-
-    var taxi2timeInput = document.createElement('input');
-    taxi2timeInput.type = 'text';
-    taxi2timeInput.id = 'taxi-2-time-Input';
-    taxi2timeInput.placeholder = languageMap[currentLanguage]['例子：| 降落后滑行 | 1728 | √ | 10 |'];
-    taxi2timeInput.style.width = '100%';
-    taxi2timeInput.style.marginBottom = '4px';
-    recordsMenu.appendChild(taxi2timeInput);
-
-    var parkingtimeInput = document.createElement('input');
-    parkingtimeInput.type = 'text';
-    parkingtimeInput.id = 'parking-time-Input';
-    parkingtimeInput.placeholder = languageMap[currentLanguage]['例子：| 停机 | 1729 | √ | -- |'];
-    parkingtimeInput.style.width = '100%';
-    parkingtimeInput.style.marginBottom = '4px';
-    recordsMenu.appendChild(parkingtimeInput);
-
-    var deplanetimeInput = document.createElement('input');
-    deplanetimeInput.type = 'text';
-    deplanetimeInput.id = 'deplane-time-Input';
-    deplanetimeInput.placeholder = languageMap[currentLanguage]['例子：| 下机 | 1800 | √ | 31 |'];
-    deplanetimeInput.style.width = '100%';
-    deplanetimeInput.style.marginBottom = '8px';
-    recordsMenu.appendChild(deplanetimeInput);
-
-    // 导出按钮
-    var exportButton = document.createElement('button');
-    exportButton.type = 'button';
-    exportButton.id = 'export-json-button';
-    exportButton.textContent = languageMap[currentLanguage]['导出航班记录'];
-    exportButton.style.width = '48%';
-    exportButton.style.padding = '8px';
-    exportButton.style.marginTop = '6px';
-    exportButton.style.cursor = 'pointer';
-    exportButton.style.marginRight = '4%';
-    recordsMenu.appendChild(exportButton);
-
-    // 导入按钮
-    var importButton = document.createElement('button');
-    importButton.type = 'button';
-    importButton.id = 'import-json-button';
-    importButton.textContent = languageMap[currentLanguage]['导入航班记录'];
-    importButton.style.width = '48%';
-    importButton.style.padding = '8px';
-    importButton.style.marginTop = '6px';
-    importButton.style.cursor = 'pointer';
-    recordsMenu.appendChild(importButton);
-
-    // 隐藏文件输入，用于选择 .json
-    var fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.accept = '.json,application/json';
-    fileInput.style.display = 'none';
-    fileInput.id = 'import-file-input';
-    document.body.appendChild(fileInput);
-
-    // 状态区域（简易提示）
-    var statusDiv = document.createElement('div');
-    statusDiv.id = 'records-status';
-    statusDiv.style.fontSize = '12px';
-    statusDiv.style.color = '#333';
-    statusDiv.style.marginTop = '8px';
-    recordsMenu.appendChild(statusDiv);
-
-    function toggleMenu() {
-        var menu = document.getElementById('records-menu');
-        if (menu.style.display === 'none' || menu.style.display === '') {
-            menu.style.display = 'block';
-        } else {
-            menu.style.display = 'none';
-        }
-    }
-
-    // Add Visit the author section
-    var visitAuthorSection = document.createElement('div');
-    visitAuthorSection.id = 'visit-author-section';
-    visitAuthorSection.style.marginTop = '12px';
-    visitAuthorSection.style.textAlign = 'center';
-    visitAuthorSection.style.fontSize = '12px';
-    visitAuthorSection.style.color = '#666';
-    recordsMenu.appendChild(visitAuthorSection);
-
-    var visitAuthorTitle = document.createElement('h3');
-    visitAuthorTitle.textContent = languageMap[currentLanguage]['查看作者'];
-    visitAuthorTitle.style.marginBottom = '5px';
-    visitAuthorSection.appendChild(visitAuthorTitle);
-
-    var bilibiliLink = document.createElement('img');
-    bilibiliLink.src = 'https://i.ibb.co/WBXZKn9/bl.png';
-    bilibiliLink.alt = 'Bilibili Link';
-    bilibiliLink.style.width = '45px';
-    bilibiliLink.style.height = 'auto';
-    bilibiliLink.style.marginRight = '10px';
-    bilibiliLink.style.cursor = 'pointer';
-    bilibiliLink.addEventListener('click', function() {
-        window.open('https://space.bilibili.com/3546746969917664?spm_id_from=333.1007.0.0', '_blank');
-    });
-    visitAuthorSection.appendChild(bilibiliLink);
-
-    var XiaohongshuLink = document.createElement('img');
-    XiaohongshuLink.src = 'https://kkimgs.yisou.com/ims?kt=url&at=ori&key=aHR0cHM6Ly9nZC1oYmltZy5odWFiYW4uY29tLzM3ZTExN2Q5NTMyMzRiZTIwNWVkNjc1MTA4Y2MyYjE0YTA5YmY1MTk3NTEzLUxaeGZhVV9mdzY1OHdlYnA=&sign=yx:u_y-cWwaQKX3p7VBMONcYApvB4c=&tv=0_0';
-    XiaohongshuLink.alt = 'Xiaohongshu Link';
-    XiaohongshuLink.style.width = '45px';
-    XiaohongshuLink.style.height = 'auto';
-    XiaohongshuLink.style.cursor = 'pointer';
-    XiaohongshuLink.addEventListener('click', function() {
-        window.open('https://www.xiaohongshu.com/user/profile/67f26ec0000000000e011a93', '_blank');
-    });
-    visitAuthorSection.appendChild(XiaohongshuLink);
-
-    var GithubLink = document.createElement('img');
-    GithubLink.src = 'https://kkimgs.yisou.com/ims?kt=url&at=ori&key=aHR0cHM6Ly9ia2ltZy5jZG4uYmNlYm9zLmNvbS9waWMvZjYzNmFmYzM3OTMxMGE1NWIzMTkwOTE5NDgxMzU0YTk4MjI2Y2VmY2JhOWQ=&sign=yx:QpJGpxLIDm1YFkekJwiiD72Dzpw=&tv=0_0';
-    GithubLink.alt = 'Github Link';
-    GithubLink.style.width = '45px';
-    GithubLink.style.height = 'auto';
-    GithubLink.style.cursor = 'pointer';
-    GithubLink.addEventListener('click', function() {
-        window.open('https://github.com/zssszscnplane', '_blank');
-    });
-    visitAuthorSection.appendChild(GithubLink);
-
-
-    soundButton.addEventListener('click', function(event) {
-        event.preventDefault();
-        event.stopPropagation();
-        toggleMenu();
-    });
-
-    document.addEventListener('keydown', function(event) {
-        if (event.altKey && event.key === 'y') {
-            toggleMenu();
-        }
-    });
-
-    // 将所有文本框数据收集并导出为 JSON 文件
-    function exportRecordsToJSON() {
-        var data = {
-            meta: {
-                exportedAt: new Date().toISOString(),
-                source: 'GeoFS Flight Records Addon'
-            },
-            flight: {
-                from: fromInput.value || '',
-                destination: destinationInput.value || '',
-                flightNumber: flightnumberInput.value || ''
-            },
-            timeline: [
-                { key: '上机', value: boardtimeInput.value || '' },
-                { key: '起飞前滑行', value: taxitimeInput.value || '' },
-                { key: '起飞', value: takeofftimeInput.value || '' },
-                { key: '巡航', value: cruisetimeInput.value || '' },
-                { key: '降落', value: landingtimeInput.value || '' },
-                { key: '降落后滑行', value: taxi2timeInput.value || '' },
-                { key: '停机', value: parkingtimeInput.value || '' },
-                { key: '下机', value: deplanetimeInput.value || '' }
-            ]
-        };
-
-        var jsonStr = JSON.stringify(data, null, 2);
-        var blob = new Blob([jsonStr], { type: 'application/json' });
-        var url = URL.createObjectURL(blob);
-
-        var filenameBase = 'geoFS_flight';
-        if (flightnumberInput.value) {
-            // sanitize filename part
-            var fn = flightnumberInput.value.replace(/[^a-zA-Z0-9-_]/g, '_');
-            filenameBase += '_' + fn;
-        }
-        var timestamp = new Date().toISOString().slice(0,19).replace(/[:T]/g, '-');
-        var filename = filenameBase + '_' + timestamp + '.json';
-
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
-        statusDiv.textContent = '已导出: ' + filename;
-    }
-
-    exportButton.addEventListener('click', function() {
-        exportRecordsToJSON();
-    });
-
-    // 填充数据到界面
-    function populateFromData(data) {
-        if (!data || typeof data !== 'object') throw new Error('invalid data');
-
-        // flight 字段（兼容旧/新导出格式）
-        if (data.flight && typeof data.flight === 'object') {
-            fromInput.value = data.flight.from || '';
-            destinationInput.value = data.flight.destination || '';
-            flightnumberInput.value = data.flight.flightNumber || data.flight.flightNo || data.flight.flight || '';
-        }
-
-        // timeline: 支持数组 [{key,value}] 或 对象 { "上机":"1600", ... }
-        if (Array.isArray(data.timeline)) {
-            data.timeline.forEach(function(item) {
-                if (!item || typeof item !== 'object') return;
-                var k = (item.key || '').toString();
-                var v = (item.value || '').toString();
-                assignTimelineValue(k, v);
-            });
-        } else if (data.timeline && typeof data.timeline === 'object') {
-            Object.keys(data.timeline).forEach(function(k) {
-                assignTimelineValue(k, data.timeline[k]);
-            });
-        }
-
-        // 兼容直接把字段放在根级别
-        var directMap = {
-            '上机': 'board-time-Input',
-            '起飞前滑行': 'taxi-time-Input',
-            '起飞': 'take-off-time-Input',
-            '巡航': 'cruise-time-Input',
-            '降落': 'landing-time-Input',
-            '降落后滑行': 'taxi-2-time-Input',
-            '停机': 'parking-time-Input',
-            '下机': 'deplane-time-Input'
-        };
-        Object.keys(directMap).forEach(function(k) {
-            if (data.hasOwnProperty(k)) {
-                document.getElementById(directMap[k]).value = data[k] || '';
-            }
+        document.getElementById('geoFS-protect-overlay-close').addEventListener('click', function() {
+            overlay.remove();
         });
     }
 
-    function assignTimelineValue(key, value) {
-        if (!key) return;
-        key = key.toString().trim();
-        var v = value == null ? '' : value.toString();
-        switch (key) {
-            case '上机':
-            case 'boarding':
-            case 'board':
-                boardtimeInput.value = v;
-                break;
-            case '起飞前滑行':
-            case 'taxi_before_takeoff':
-            case 'taxi_before':
-                taxitimeInput.value = v;
-                break;
-            case '起飞':
-            case 'takeoff':
-                takeofftimeInput.value = v;
-                break;
-            case '巡航':
-            case 'cruise':
-                cruisetimeInput.value = v;
-                break;
-            case '降落':
-            case 'landing':
-                landingtimeInput.value = v;
-                break;
-            case '降落后滑行':
-            case 'taxi_after_landing':
-                taxi2timeInput.value = v;
-                break;
-            case '停机':
-            case 'parking':
-                parkingtimeInput.value = v;
-                break;
-            case '下机':
-            case 'deplane':
-            case 'disembark':
-                deplanetimeInput.value = v;
-                break;
-            default:
-                // 未知键，追加到 status 提示，但不阻止导入
-                // 保留：可以扩展保存到自定义字段
-                console.log('Unknown timeline key:', key, 'value:', v);
+    // 拉取远端 raw 文件并检查是否包含 SOURCE_TOKEN
+    async function verifySourceToken() {
+        try {
+            var res = await fetch(SOURCE_RAW_URL, {cache: 'no-store', credentials: 'omit'});
+            if (!res.ok) {
+                throw new Error('fetch failed: ' + res.status);
+            }
+            var text = await res.text();
+            if (typeof text !== 'string') {
+                throw new Error('remote content empty');
+            }
+            if (text.indexOf(SOURCE_TOKEN) === -1) {
+                throw new Error('token not found in remote file');
+            }
+            // token found -> considered verified
+            console.log('GeoFS Flight Records: source token verified.');
+            return true;
+        } catch (err) {
+            console.warn('GeoFS Flight Records: source verification failed:', err);
+            return false;
         }
     }
 
-    // 处理文件选择并导入
-    fileInput.addEventListener('change', function(evt) {
-        var file = fileInput.files && fileInput.files[0];
-        if (!file) return;
-        var reader = new FileReader();
-        reader.onload = function(e) {
-            try {
-                var text = e.target.result;
-                var parsed = JSON.parse(text);
-                populateFromData(parsed);
-                statusDiv.textContent = languageMap[currentLanguage]['导入成功'];
-            } catch (err) {
-                console.error(err);
-                statusDiv.textContent = languageMap[currentLanguage]['导入失败: 非法 JSON 或 结构不匹配'];
-                alert(languageMap[currentLanguage]['导入失败: 非法 JSON 或 结构不匹配']);
-            } finally {
-                // 清空 input 值，以便重复选择同一文件也能触发 change
-                fileInput.value = '';
+    // 初始化入口：先验证远端 token，验证成功后再加载 UI 与功能
+    async function init() {
+        var ok = await verifySourceToken();
+        if (!ok) {
+            disableWithMessage('Official token not found or fetch error.');
+            return; // 不继续加载插件
+        }
+        // 通过验证，继续初始化插件
+        startApp();
+    }
+
+    // 把原来创建 UI / 功能的代码封装进 startApp 函数
+    function startApp() {
+        var currentLanguage = 'English';
+
+        var languageMap = {
+            'English': {
+                'Enter text': 'Enter text',
+                'View author': 'View author',
+                'GeoFS Flight Records': 'GeoFS Flight Records',
+                'Made by Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ Github-zssszscnplane': 'Made by Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ Github-zssszscnplane',
+                '|    Status    |    Time    |    Done    |    Duration    |': '|    Status    |    Time    |    Done    |    Duration    |',
+                'Example: | Boarding | 1600 | √ | 60 |': 'Example: | Boarding | 1600 | √ | 60 |',
+                'Example: | Taxi before takeoff | 1610 | √ | 10 |': 'Example: | Taxi before takeoff | 1610 | √ | 10 |',
+                'Example: | Takeoff | 1615 | √ | -- |': 'Example: | Takeoff | 1615 | √ | -- |',
+                'Example: | Cruise | 1715 | √ | 35 |': 'Example: | Cruise | 1715 | √ | 35 |',
+                'Example: | Landing | 1718 | √ | -- |': 'Example: | Landing | 1718 | √ | -- |',
+                'Example: | Taxi after landing | 1728 | √ | 10 |': 'Example: | Taxi after landing | 1728 | √ | 10 |',
+                'Example: | Parking | 1729 | √ | -- |': 'Example: | Parking | 1729 | √ | -- |',
+                'Example: | Deplane | 1800 | √ | 31 |': 'Example: | Deplane | 1800 | √ | 31 |',
+                'Destination (ICTO)': 'Destination (ICTO)',
+                'Origin (ICTO)': 'Origin (ICTO)',
+                'Flight number': 'Flight number',
+                'Export Flight Records' : 'Export Flight Records',
+                'Import Flight Records' : 'Import Flight Records',
+                'Import success': 'Import success',
+                'Import failed: invalid JSON or structure': 'Import failed: invalid JSON or structure',
+                'Exported: ': 'Exported: '
             }
         };
-        reader.onerror = function(err) {
-            console.error('File read error', err);
-            statusDiv.textContent = languageMap[currentLanguage]['导入失败: 非法 JSON 或 结构不匹配'];
-            fileInput.value = '';
-        };
-        reader.readAsText(file, 'utf-8');
-    });
 
-    // 点击导入按钮触发文件选择
-    importButton.addEventListener('click', function() {
-        fileInput.click();
-    });
+        // Create UI elements
+        var soundButton = document.createElement('div');
+        soundButton.id = 'flight-records-button';
+        soundButton.textContent = 'Records';
+        soundButton.style.position = 'fixed';
+        soundButton.style.bottom = '130px';
+        soundButton.style.right = '30px';
+        soundButton.style.backgroundColor = 'white';
+        soundButton.style.color = 'black';
+        soundButton.style.padding = '10px 20px';
+        soundButton.style.borderRadius = '5px';
+        soundButton.style.cursor = 'pointer';
+        soundButton.style.boxShadow = '0 2px 5px rgba(0, 0, 0, 0.2)';
+        soundButton.style.zIndex = '9999';
+        document.body.appendChild(soundButton);
+
+        var recordsMenu = document.createElement('div');
+        recordsMenu.id = 'records-menu';
+        recordsMenu.style.position = 'fixed';
+        recordsMenu.style.bottom = '200px';
+        recordsMenu.style.right = '30px';
+        recordsMenu.style.width = '320px';
+        recordsMenu.style.backgroundColor = 'white';
+        recordsMenu.style.color = 'black';
+        recordsMenu.style.padding = '20px';
+        recordsMenu.style.borderRadius = '5px';
+        recordsMenu.style.boxShadow = '0 2px 5px rgba(0, 0, 0, 0.2)';
+        recordsMenu.style.display = 'none';
+        recordsMenu.style.maxHeight = '420px';
+        recordsMenu.style.overflowY = 'auto';
+        recordsMenu.style.zIndex = '9999';
+        document.body.appendChild(recordsMenu);
+
+        var menuTitle = document.createElement('h1');
+        menuTitle.textContent = languageMap[currentLanguage]['GeoFS Flight Records'];
+        menuTitle.style.fontSize = '18px';
+        menuTitle.style.marginBottom = '10px';
+        recordsMenu.appendChild(menuTitle);
+
+        var menuSubtitle = document.createElement('h2');
+        menuSubtitle.textContent = languageMap[currentLanguage]['Made by Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ Github-zssszscnplane'];
+        menuSubtitle.style.fontSize = '13px';
+        menuSubtitle.style.marginBottom = '18px';
+        menuSubtitle.style.color = '#666';
+        recordsMenu.appendChild(menuSubtitle);
+
+        var Idonnmenu = document.createElement('h3');
+        Idonnmenu.textContent = '-------------GeoFS Flight Records----------------';
+        Idonnmenu.style.fontSize = '13px';
+        Idonnmenu.style.marginBottom = '10px';
+        Idonnmenu.style.color = '#000';
+        recordsMenu.appendChild(Idonnmenu);
+
+        var fromInput = document.createElement('input');
+        fromInput.type = 'text';
+        fromInput.id = 'from-Input';
+        fromInput.placeholder = languageMap[currentLanguage]['Origin (ICTO)'];
+        fromInput.style.width = '100%';
+        fromInput.style.marginBottom = '6px';
+        recordsMenu.appendChild(fromInput);
+
+        var destinationInput = document.createElement('input');
+        destinationInput.type = 'text';
+        destinationInput.id = 'destination-Input';
+        destinationInput.placeholder = languageMap[currentLanguage]['Destination (ICTO)'];
+        destinationInput.style.width = '100%';
+        destinationInput.style.marginBottom = '6px';
+        recordsMenu.appendChild(destinationInput);
+
+        var flightnumberInput = document.createElement('input');
+        flightnumberInput.type = 'text';
+        flightnumberInput.id = 'flight-number-Input';
+        flightnumberInput.placeholder = languageMap[currentLanguage]['Flight number'];
+        flightnumberInput.style.width = '100%';
+        flightnumberInput.style.marginBottom = '6px';
+        recordsMenu.appendChild(flightnumberInput);
+
+        var egmenu = document.createElement('h5');
+        egmenu.textContent = languageMap[currentLanguage]['|    Status    |    Time    |    Done    |    Duration    |'];
+        egmenu.style.fontSize = '14px';
+        egmenu.style.marginBottom = '6px';
+        egmenu.style.color = '#000';
+        recordsMenu.appendChild(egmenu);
+
+        var boardtimeInput = document.createElement('input');
+        boardtimeInput.type = 'text';
+        boardtimeInput.id = 'board-time-Input';
+        boardtimeInput.placeholder = languageMap[currentLanguage]['Example: | Boarding | 1600 | √ | 60 |'];
+        boardtimeInput.style.width = '100%';
+        boardtimeInput.style.marginBottom = '4px';
+        recordsMenu.appendChild(boardtimeInput);
+
+        var taxitimeInput = document.createElement('input');
+        taxitimeInput.type = 'text';
+        taxitimeInput.id = 'taxi-time-Input';
+        taxitimeInput.placeholder = languageMap[currentLanguage]['Example: | Taxi before takeoff | 1610 | √ | 10 |'];
+        taxitimeInput.style.width = '100%';
+        taxitimeInput.style.marginBottom = '4px';
+        recordsMenu.appendChild(taxitimeInput);
+
+        var takeofftimeInput = document.createElement('input');
+        takeofftimeInput.type = 'text';
+        takeofftimeInput.id = 'take-off-time-Input';
+        takeofftimeInput.placeholder = languageMap[currentLanguage]['Example: | Takeoff | 1615 | √ | -- |'];
+        takeofftimeInput.style.width = '100%';
+        takeofftimeInput.style.marginBottom = '4px';
+        recordsMenu.appendChild(takeofftimeInput);
+
+        var cruisetimeInput = document.createElement('input');
+        cruisetimeInput.type = 'text';
+        cruisetimeInput.id = 'cruise-time-Input';
+        cruisetimeInput.placeholder = languageMap[currentLanguage]['Example: | Cruise | 1715 | √ | 35 |'];
+        cruisetimeInput.style.width = '100%';
+        cruisetimeInput.style.marginBottom = '4px';
+        recordsMenu.appendChild(cruisetimeInput);
+
+        var landingtimeInput = document.createElement('input');
+        landingtimeInput.type = 'text';
+        landingtimeInput.id = 'landing-time-Input';
+        landingtimeInput.placeholder = languageMap[currentLanguage]['Example: | Landing | 1718 | √ | -- |'];
+        landingtimeInput.style.width = '100%';
+        landingtimeInput.style.marginBottom = '4px';
+        recordsMenu.appendChild(landingtimeInput);
+
+        var taxi2timeInput = document.createElement('input');
+        taxi2timeInput.type = 'text';
+        taxi2timeInput.id = 'taxi-2-time-Input';
+        taxi2timeInput.placeholder = languageMap[currentLanguage]['Example: | Taxi after landing | 1728 | √ | 10 |'];
+        taxi2timeInput.style.width = '100%';
+        taxi2timeInput.style.marginBottom = '4px';
+        recordsMenu.appendChild(taxi2timeInput);
+
+        var parkingtimeInput = document.createElement('input');
+        parkingtimeInput.type = 'text';
+        parkingtimeInput.id = 'parking-time-Input';
+        parkingtimeInput.placeholder = languageMap[currentLanguage]['Example: | Parking | 1729 | √ | -- |'];
+        parkingtimeInput.style.width = '100%';
+        parkingtimeInput.style.marginBottom = '4px';
+        recordsMenu.appendChild(parkingtimeInput);
+
+        var deplanetimeInput = document.createElement('input');
+        deplanetimeInput.type = 'text';
+        deplanetimeInput.id = 'deplane-time-Input';
+        deplanetimeInput.placeholder = languageMap[currentLanguage]['Example: | Deplane | 1800 | √ | 31 |'];
+        deplanetimeInput.style.width = '100%';
+        deplanetimeInput.style.marginBottom = '8px';
+        recordsMenu.appendChild(deplanetimeInput);
+
+        // Export button
+        var exportButton = document.createElement('button');
+        exportButton.type = 'button';
+        exportButton.id = 'export-json-button';
+        exportButton.textContent = languageMap[currentLanguage]['Export Flight Records'];
+        exportButton.style.width = '48%';
+        exportButton.style.padding = '8px';
+        exportButton.style.marginTop = '6px';
+        exportButton.style.cursor = 'pointer';
+        exportButton.style.marginRight = '4%';
+        recordsMenu.appendChild(exportButton);
+
+        // Import button
+        var importButton = document.createElement('button');
+        importButton.type = 'button';
+        importButton.id = 'import-json-button';
+        importButton.textContent = languageMap[currentLanguage]['Import Flight Records'];
+        importButton.style.width = '48%';
+        importButton.style.padding = '8px';
+        importButton.style.marginTop = '6px';
+        importButton.style.cursor = 'pointer';
+        recordsMenu.appendChild(importButton);
+
+        // Hidden file input for selecting .json
+        var fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.json,application/json';
+        fileInput.style.display = 'none';
+        fileInput.id = 'import-file-input';
+        document.body.appendChild(fileInput);
+
+        // Status area (simple)
+        var statusDiv = document.createElement('div');
+        statusDiv.id = 'records-status';
+        statusDiv.style.fontSize = '12px';
+        statusDiv.style.color = '#333';
+        statusDiv.style.marginTop = '8px';
+        recordsMenu.appendChild(statusDiv);
+
+        function toggleMenu() {
+            var menu = document.getElementById('records-menu');
+            if (menu.style.display === 'none' || menu.style.display === '') {
+                menu.style.display = 'block';
+            } else {
+                menu.style.display = 'none';
+            }
+        }
+
+        // Author section
+        var visitAuthorSection = document.createElement('div');
+        visitAuthorSection.id = 'visit-author-section';
+        visitAuthorSection.style.marginTop = '12px';
+        visitAuthorSection.style.textAlign = 'center';
+        visitAuthorSection.style.fontSize = '12px';
+        visitAuthorSection.style.color = '#666';
+        recordsMenu.appendChild(visitAuthorSection);
+
+        var visitAuthorTitle = document.createElement('h3');
+        visitAuthorTitle.textContent = languageMap[currentLanguage]['View author'];
+        visitAuthorTitle.style.marginBottom = '5px';
+        visitAuthorSection.appendChild(visitAuthorTitle);
+
+        var bilibiliLink = document.createElement('img');
+        bilibiliLink.src = 'https://i.ibb.co/WBXZKn9/bl.png';
+        bilibiliLink.alt = 'Bilibili Link';
+        bilibiliLink.style.width = '45px';
+        bilibiliLink.style.height = 'auto';
+        bilibiliLink.style.marginRight = '10px';
+        bilibiliLink.style.cursor = 'pointer';
+        bilibiliLink.addEventListener('click', function() {
+            window.open('https://space.bilibili.com/3546746969917664?spm_id_from=333.1007.0.0', '_blank');
+        });
+        visitAuthorSection.appendChild(bilibiliLink);
+
+        var XiaohongshuLink = document.createElement('img');
+        XiaohongshuLink.src = 'https://kkimgs.yisou.com/ims?kt=url&at=ori&key=aHR0cHM6Ly9nZC1oYmltZy5odWFiYW4uY29tLzM3ZTExN2Q5NTMyMzRiZTIwNWVkNjc1MTA4Y2MyYjE0YTA5YmY1MTk3NTEzLUxaeGZhVV9mdzY1OHdlYnA=&sign=yx:u_y-cWwaQKX3p7VBMONcYApvB4c=&tv=0_0';
+        XiaohongshuLink.alt = 'Xiaohongshu Link';
+        XiaohongshuLink.style.width = '45px';
+        XiaohongshuLink.style.height = 'auto';
+        XiaohongshuLink.style.cursor = 'pointer';
+        XiaohongshuLink.addEventListener('click', function() {
+            window.open('https://www.xiaohongshu.com/user/profile/67f26ec0000000000e011a93', '_blank');
+        });
+        visitAuthorSection.appendChild(XiaohongshuLink);
+
+        var GithubLink = document.createElement('img');
+        GithubLink.src = 'https://kkimgs.yisou.com/ims?kt=url&at=ori&key=aHR0cHM6Ly9ia2ltZy5jZG4uYmNlYm9zLmNvbS9waWMvZjYzNmFmYzM3OTMxMGE1NWIzMTkwOTE5NDgxMzU0YTk4MjI2Y2VmY2JhOWQ=&sign=yx:QpJGpxLIDm1YFkekJwiiD72Dzpw=&tv=0_0';
+        GithubLink.alt = 'Github Link';
+        GithubLink.style.width = '45px';
+        GithubLink.style.height = 'auto';
+        GithubLink.style.cursor = 'pointer';
+        GithubLink.addEventListener('click', function() {
+            window.open('https://github.com/zssszscnplane', '_blank');
+        });
+        visitAuthorSection.appendChild(GithubLink);
+
+        soundButton.addEventListener('click', function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            toggleMenu();
+        });
+
+        document.addEventListener('keydown', function(event) {
+            if (event.altKey && event.key === 'y') {
+                toggleMenu();
+            }
+        });
+
+        // Collect inputs and export as JSON
+        function exportRecordsToJSON() {
+            var data = {
+                meta: {
+                    exportedAt: new Date().toISOString(),
+                    source: 'GeoFS Flight Records Addon'
+                },
+                flight: {
+                    from: fromInput.value || '',
+                    destination: destinationInput.value || '',
+                    flightNumber: flightnumberInput.value || ''
+                },
+                timeline: [
+                    { key: 'boarding', value: boardtimeInput.value || '' },
+                    { key: 'taxi_before_takeoff', value: taxitimeInput.value || '' },
+                    { key: 'takeoff', value: takeofftimeInput.value || '' },
+                    { key: 'cruise', value: cruisetimeInput.value || '' },
+                    { key: 'landing', value: landingtimeInput.value || '' },
+                    { key: 'taxi_after_landing', value: taxi2timeInput.value || '' },
+                    { key: 'parking', value: parkingtimeInput.value || '' },
+                    { key: 'deplane', value: deplanetimeInput.value || '' }
+                ]
+            };
+
+            var jsonStr = JSON.stringify(data, null, 2);
+            var blob = new Blob([jsonStr], { type: 'application/json' });
+            var url = URL.createObjectURL(blob);
+
+            var filenameBase = 'geoFS_flight';
+            if (flightnumberInput.value) {
+                // sanitize filename part
+                var fn = flightnumberInput.value.replace(/[^a-zA-Z0-9-_]/g, '_');
+                filenameBase += '_' + fn;
+            }
+            var timestamp = new Date().toISOString().slice(0,19).replace(/[:T]/g, '-');
+            var filename = filenameBase + '_' + timestamp + '.json';
+
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+            statusDiv.textContent = languageMap[currentLanguage]['Exported: '] + filename;
+        }
+
+        exportButton.addEventListener('click', function() {
+            exportRecordsToJSON();
+        });
+
+        // Populate UI from imported data
+        function populateFromData(data) {
+            if (!data || typeof data !== 'object') throw new Error('invalid data');
+
+            // flight field support (compatible with older/newer formats)
+            if (data.flight && typeof data.flight === 'object') {
+                fromInput.value = data.flight.from || '';
+                destinationInput.value = data.flight.destination || '';
+                flightnumberInput.value = data.flight.flightNumber || data.flight.flightNo || data.flight.flight || '';
+            }
+
+            // timeline: support array [{key,value}] or object { "boarding":"1600", ... }
+            if (Array.isArray(data.timeline)) {
+                data.timeline.forEach(function(item) {
+                    if (!item || typeof item !== 'object') return;
+                    var k = (item.key || '').toString();
+                    var v = (item.value || '').toString();
+                    assignTimelineValue(k, v);
+                });
+            } else if (data.timeline && typeof data.timeline === 'object') {
+                Object.keys(data.timeline).forEach(function(k) {
+                    assignTimelineValue(k, data.timeline[k]);
+                });
+            }
+
+            // support root-level keys in both English and Chinese
+            var directMap = {
+                'boarding': 'board-time-Input',
+                'taxi_before_takeoff': 'taxi-time-Input',
+                'takeoff': 'take-off-time-Input',
+                'cruise': 'cruise-time-Input',
+                'landing': 'landing-time-Input',
+                'taxi_after_landing': 'taxi-2-time-Input',
+                'parking': 'parking-time-Input',
+                'deplane': 'deplane-time-Input',
+                '上机': 'board-time-Input',
+                '起飞前滑行': 'taxi-time-Input',
+                '起飞': 'take-off-time-Input',
+                '巡航': 'cruise-time-Input',
+                '降落': 'landing-time-Input',
+                '降落后滑行': 'taxi-2-time-Input',
+                '停机': 'parking-time-Input',
+                '下机': 'deplane-time-Input'
+            };
+            Object.keys(directMap).forEach(function(k) {
+                if (data.hasOwnProperty(k)) {
+                    document.getElementById(directMap[k]).value = data[k] || '';
+                }
+            });
+        }
+
+        function assignTimelineValue(key, value) {
+            if (!key) return;
+            var rawKey = key.toString().trim();
+            var keyLower = rawKey.toLowerCase();
+            var v = value == null ? '' : value.toString();
+            switch (keyLower) {
+                case '上机':
+                case 'boarding':
+                case 'board':
+                    boardtimeInput.value = v;
+                    break;
+                case '起飞前滑行':
+                case 'taxi_before_takeoff':
+                case 'taxi_before':
+                    taxitimeInput.value = v;
+                    break;
+                case '起飞':
+                case 'takeoff':
+                    takeofftimeInput.value = v;
+                    break;
+                case '巡航':
+                case 'cruise':
+                    cruisetimeInput.value = v;
+                    break;
+                case '降落':
+                case 'landing':
+                    landingtimeInput.value = v;
+                    break;
+                case '降落后滑行':
+                case 'taxi_after_landing':
+                    taxi2timeInput.value = v;
+                    break;
+                case '停机':
+                case 'parking':
+                    parkingtimeInput.value = v;
+                    break;
+                case '下机':
+                case 'deplane':
+                case 'disembark':
+                    deplanetimeInput.value = v;
+                    break;
+                default:
+                    console.log('Unknown timeline key:', rawKey, 'value:', v);
+            }
+        }
+
+        // File selection and import handling
+        fileInput.addEventListener('change', function(evt) {
+            var file = fileInput.files && fileInput.files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    var text = e.target.result;
+                    var parsed = JSON.parse(text);
+                    populateFromData(parsed);
+                    statusDiv.textContent = languageMap[currentLanguage]['Import success'];
+                } catch (err) {
+                    console.error(err);
+                    statusDiv.textContent = languageMap[currentLanguage]['Import failed: invalid JSON or structure'];
+                    alert(languageMap[currentLanguage]['Import failed: invalid JSON or structure']);
+                } finally {
+                    // Clear input so selecting same file again will trigger change
+                    fileInput.value = '';
+                }
+            };
+            reader.onerror = function(err) {
+                console.error('File read error', err);
+                statusDiv.textContent = languageMap[currentLanguage]['Import failed: invalid JSON or structure'];
+                fileInput.value = '';
+            };
+            reader.readAsText(file, 'utf-8');
+        });
+
+        // Click import button to open file picker
+        importButton.addEventListener('click', function() {
+            fileInput.click();
+        });
+    }
+
+    // run init
+    init();
 
 })();
