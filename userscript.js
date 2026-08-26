@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GeoFS-Flight-records-addon
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.5
 // @description  GeoFS 航线记录（导出/导入 JSON）
 // @author       Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ GitHub-zssszscnplane
 // @match        https://www.geo-fs.com/geofs.php*
@@ -36,14 +36,42 @@
             '导出航班记录' : '导出航班记录',
             '导入航班记录' : '导入航班记录',
             '导入成功': '导入成功',
-            '导入失败: 非法 JSON 或 结构不匹配': '导入失败: 非法 JSON 或 结构不匹配'
+            '导入失败: 非法 JSON 或 结构不匹配': '导入失败: 非法 JSON 或 结构不匹配',
+            'Exported: ': '已导出: ',
+            '航线记录': '航线记录'
+        },
+
+        'English': {
+            '请输入文字': 'Enter text',
+            '查看作者': 'View author',
+            'GeoFS 航线记录': 'GeoFS Flight Records',
+            '由 Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ Github-zssszscnplane 制作': 'Create by Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ Github-zssszscnplane',
+            '|    状态    |    完成时间    |    是否完成    |    花费时间    |': '|    Status    |    Time    |    Done    |    Duration    |',
+            '例子：| 上机 | 1600 | √ | 60 |': 'Example: | Boarding | 1600 | √ | 60 |',
+            '例子：| 起飞前滑行 | 1610 | √ | 10 |': 'Example: | Taxi before takeoff | 1610 | √ | 10 |',
+            '例子：| 起飞 | 1615 | √ | -- |': 'Example: | Takeoff | 1615 | √ | -- |',
+            '例子：| 巡航 | 1715 | √ | 35 |': 'Example: | Cruise | 1715 | √ | 35 |',
+            '例子：| 降落 | 1718 | √ | -- |': 'Example: | Landing | 1718 | √ | -- |',
+            '例子：| 降落后滑行 | 1728 | √ | 10 |': 'Example: | Taxi after landing | 1728 | √ | 10 |',
+            '例子：| 停机 | 1729 | √ | -- |': 'Example: | Parking | 1729 | √ | -- |',
+            '例子：| 下机 | 1800 | √ | 31 |': 'Example: | Deplane | 1800 | √ | 31 |',
+            '目的地(ICTO)': 'Destination (ICTO)',
+            '始发地(ICTO)': 'Origin (ICTO)',
+            '航班号': 'Flight number',
+            '导出航班记录' : 'Export Flight Records',
+            '导入航班记录' : 'Import Flight Records',
+            '导入成功': 'Import success',
+            '导入失败: 非法 JSON 或 结构不匹配': 'Import failed: invalid JSON or structure',
+            'Exported: ': 'Exported: ',
+            '航线记录': 'Flight Records'
         },
     };
 
     // 创建UI元素
     var soundButton = document.createElement('div');
     soundButton.id = 'flight-records-button';
-    soundButton.textContent = 'Records';
+    // 初始主按钮文字：设置为 "航线记录"
+    soundButton.textContent = '航线记录';
     soundButton.style.position = 'fixed';
     soundButton.style.bottom = '130px';
     soundButton.style.right = '30px';
@@ -82,12 +110,67 @@
     var menuSubtitle = document.createElement('h2');
     menuSubtitle.textContent = languageMap[currentLanguage]['由 Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ Github-zssszscnplane 制作'];
     menuSubtitle.style.fontSize = '13px';
-    menuSubtitle.style.marginBottom = '18px';
+    menuSubtitle.style.marginBottom = '10px';
     menuSubtitle.style.color = '#666';
     recordsMenu.appendChild(menuSubtitle);
 
+    // ---------- 语言选择器：放在 Create by（menuSubtitle）下面，Idonnmenu 上面，且最左侧 ----------
+    var langSelectorContainer = document.createElement('div');
+    langSelectorContainer.style.display = 'flex';
+    langSelectorContainer.style.justifyContent = 'flex-start'; // 左对齐（最左侧）
+    langSelectorContainer.style.width = '100%';
+    langSelectorContainer.style.marginBottom = '10px';
+    recordsMenu.appendChild(langSelectorContainer);
+
+    var langButton = document.createElement('button');
+    langButton.id = 'language-button';
+    langButton.textContent = 'Language (语言)';
+    langButton.style.fontSize = '12px';
+    langButton.style.padding = '4px 8px';
+    langButton.style.cursor = 'pointer';
+    langButton.style.marginRight = '8px';
+    langSelectorContainer.appendChild(langButton);
+
+    var langOptions = document.createElement('div');
+    langOptions.id = 'lang-options';
+    langOptions.style.display = 'none';
+    langOptions.style.marginTop = '6px';
+    langOptions.style.textAlign = 'left'; // 左对齐选项
+    langOptions.style.gap = '6px';
+    // put langOptions directly under the button inside the same container for left alignment
+    langSelectorContainer.appendChild(langOptions);
+
+    var zhBtn = document.createElement('button');
+    zhBtn.textContent = '简体中文';
+    zhBtn.style.padding = '4px 8px';
+    zhBtn.style.fontSize = '12px';
+    zhBtn.style.cursor = 'pointer';
+    zhBtn.style.marginRight = '6px';
+    langOptions.appendChild(zhBtn);
+
+    var enBtn = document.createElement('button');
+    enBtn.textContent = 'English';
+    enBtn.style.padding = '4px 8px';
+    enBtn.style.fontSize = '12px';
+    enBtn.style.cursor = 'pointer';
+    langOptions.appendChild(enBtn);
+
+    // Toggle language options display
+    langButton.addEventListener('click', function(e) {
+        e.stopPropagation();
+        langOptions.style.display = (langOptions.style.display === 'none' || langOptions.style.display === '') ? 'block' : 'none';
+    });
+    // hide lang options when clicking outside menu
+    document.addEventListener('click', function() {
+        if (langOptions) langOptions.style.display = 'none';
+    });
+    langOptions.addEventListener('click', function(e) {
+        e.stopPropagation(); // prevent outer click handler from immediately hiding
+    });
+    // ------------------------------------------------------------------------------
+
     var Idonnmenu = document.createElement('h3');
-    Idonnmenu.textContent = '-------------GeoFS 航线记录----------------';
+    Idonnmenu.textContent = '-------------' + languageMap[currentLanguage]['GeoFS 航线记录'] + '----------------';
     Idonnmenu.style.fontSize = '13px';
     Idonnmenu.style.marginBottom = '10px';
     Idonnmenu.style.color = '#000'; // 改为黑色
@@ -341,7 +424,7 @@
         a.click();
         document.body.removeChild(a);
         setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
-        statusDiv.textContent = '已导出: ' + filename;
+        statusDiv.textContent = (languageMap[currentLanguage]['Exported: '] || '') + filename;
     }
 
     exportButton.addEventListener('click', function() {
@@ -432,8 +515,6 @@
                 deplanetimeInput.value = v;
                 break;
             default:
-                // 未知键，追加到 status 提示，但不阻止导入
-                // 保留：可以扩展保存到自定义字段
                 console.log('Unknown timeline key:', key, 'value:', v);
         }
     }
@@ -454,7 +535,6 @@
                 statusDiv.textContent = languageMap[currentLanguage]['导入失败: 非法 JSON 或 结构不匹配'];
                 alert(languageMap[currentLanguage]['导入失败: 非法 JSON 或 结构不匹配']);
             } finally {
-                // 清空 input 值，以便重复选择同一文件也能触发 change
                 fileInput.value = '';
             }
         };
@@ -470,5 +550,52 @@
     importButton.addEventListener('click', function() {
         fileInput.click();
     });
+
+    // --- 新增：语言切换逻辑 ---
+    function setLanguage(lang) {
+        if (!languageMap[lang]) return;
+        currentLanguage = lang;
+
+        // update top/button labels (note: setLanguage will update the button text when language changes)
+        soundButton.textContent = languageMap[currentLanguage]['GeoFS 航线记录'];
+        menuTitle.textContent = languageMap[currentLanguage]['GeoFS 航线记录'];
+        menuSubtitle.textContent = languageMap[currentLanguage]['由 Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ Github-zssszscnplane 制作'];
+        Idonnmenu.textContent = '-------------' + languageMap[currentLanguage]['GeoFS 航线记录'] + '----------------';
+        visitAuthorTitle.textContent = languageMap[currentLanguage]['查看作者'];
+
+        // inputs placeholders
+        fromInput.placeholder = languageMap[currentLanguage]['始发地(ICTO)'];
+        destinationInput.placeholder = languageMap[currentLanguage]['目的地(ICTO)'];
+        flightnumberInput.placeholder = languageMap[currentLanguage]['航班号'];
+        egmenu.textContent = languageMap[currentLanguage]['|    状态    |    完成时间    |    是否完成    |    花费时间    |'];
+        boardtimeInput.placeholder = languageMap[currentLanguage]['例子：| 上机 | 1600 | √ | 60 |'];
+        taxitimeInput.placeholder = languageMap[currentLanguage]['例子：| 起飞前滑行 | 1610 | √ | 10 |'];
+        takeofftimeInput.placeholder = languageMap[currentLanguage]['例子：| 起飞 | 1615 | √ | -- |'];
+        cruisetimeInput.placeholder = languageMap[currentLanguage]['例子：| 巡航 | 1715 | √ | 35 |'];
+        landingtimeInput.placeholder = languageMap[currentLanguage]['例子：| 降落 | 1718 | √ | -- |'];
+        taxi2timeInput.placeholder = languageMap[currentLanguage]['例子：| 降落后滑行 | 1728 | √ | 10 |'];
+        parkingtimeInput.placeholder = languageMap[currentLanguage]['例子：| 停机 | 1729 | √ | -- |'];
+        deplanetimeInput.placeholder = languageMap[currentLanguage]['例子：| 下机 | 1800 | √ | 31 |'];
+
+        // buttons
+        exportButton.textContent = languageMap[currentLanguage]['导出航班记录'];
+        importButton.textContent = languageMap[currentLanguage]['导入航班记录'];
+
+        // status clear (or keep existing)
+        statusDiv.textContent = '';
+    }
+
+    zhBtn.addEventListener('click', function() {
+        setLanguage('简体中文');
+        langOptions.style.display = 'none';
+    });
+
+    enBtn.addEventListener('click', function() {
+        setLanguage('English');
+        langOptions.style.display = 'none';
+    });
+
+    // 初始化语言（确保界面文本与 currentLanguage 一致）
+    setLanguage(currentLanguage);
 
 })();
