@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GeoFS-Flight-records-addon
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.3
 // @description  GeoFS 航线记录（导出/导入 JSON）
 // @author       Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ GitHub-zssszscnplane
 // @match        https://www.geo-fs.com/geofs.php*
