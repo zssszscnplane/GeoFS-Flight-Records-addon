@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      1.3
 // @description  GeoFS 航线记录（导出/导入 JSON）
-// @author       Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ GitHub-zssszscnplane
+// @author       Bilibili-我是小猪05 Xiaohongshu-起飞吧！凤凰牌飞机！ GitHub-zssszscnplane (modified: added Aircraft field)
 // @match        https://www.geo-fs.com/geofs.php*
 // @match        https://*.geo-fs.com/geofs.php*
 // @grant        none
@@ -33,6 +33,7 @@
             '目的地(ICTO)': '目的地(ICTO)',
             '始发地(ICTO)': '始发地(ICTO)',
             '航班号': '航班号',
+            '机型': '机型',
             '导出航班记录' : '导出航班记录',
             '导入航班记录' : '导入航班记录',
             '导入成功': '导入成功',
@@ -58,6 +59,7 @@
             '目的地(ICTO)': 'Destination (ICTO)',
             '始发地(ICTO)': 'Origin (ICTO)',
             '航班号': 'Flight number',
+            '机型': 'Aircraft',
             '导出航班记录' : 'Export Flight Records',
             '导入航班记录' : 'Import Flight Records',
             '导入成功': 'Import success',
@@ -199,6 +201,15 @@
     flightnumberInput.style.width = '100%';
     flightnumberInput.style.marginBottom = '6px';
     recordsMenu.appendChild(flightnumberInput);
+
+    // 新增：机型（Aircraft）输入框
+    var aircraftInput = document.createElement('input');
+    aircraftInput.type = 'text';
+    aircraftInput.id = 'aircraft-Input';
+    aircraftInput.placeholder = languageMap[currentLanguage]['机型']; // will be updated by setLanguage on init
+    aircraftInput.style.width = '100%';
+    aircraftInput.style.marginBottom = '6px';
+    recordsMenu.appendChild(aircraftInput);
 
     var egmenu = document.createElement('h5');
     egmenu.textContent = languageMap[currentLanguage]['|    状态    |    完成时间    |    是否完成    |    花费时间    |'];
@@ -390,7 +401,8 @@
             flight: {
                 from: fromInput.value || '',
                 destination: destinationInput.value || '',
-                flightNumber: flightnumberInput.value || ''
+                flightNumber: flightnumberInput.value || '',
+                aircraft: aircraftInput.value || ''
             },
             timeline: [
                 { key: '上机', value: boardtimeInput.value || '' },
@@ -440,6 +452,13 @@
             fromInput.value = data.flight.from || '';
             destinationInput.value = data.flight.destination || '';
             flightnumberInput.value = data.flight.flightNumber || data.flight.flightNo || data.flight.flight || '';
+            // aircraft: 支持多种字段名
+            aircraftInput.value = data.flight.aircraft || data.flight.aircraftType || data.flight.aircraftModel || '';
+        }
+
+        // 兼容根级别可能存在的 aircraft/机型 字段
+        if (!aircraftInput.value) {
+            aircraftInput.value = data.aircraft || data.Aircraft || data.机型 || data['机型'] || '';
         }
 
         // timeline: 支持数组 [{key,value}] 或 对象 { "上机":"1600", ... }
@@ -465,7 +484,9 @@
             '降落': 'landing-time-Input',
             '降落后滑行': 'taxi-2-time-Input',
             '停机': 'parking-time-Input',
-            '下机': 'deplane-time-Input'
+            '下机': 'deplane-time-Input',
+            '机型': 'aircraft-Input',
+            'Aircraft': 'aircraft-Input'
         };
         Object.keys(directMap).forEach(function(k) {
             if (data.hasOwnProperty(k)) {
@@ -567,6 +588,7 @@
         fromInput.placeholder = languageMap[currentLanguage]['始发地(ICTO)'];
         destinationInput.placeholder = languageMap[currentLanguage]['目的地(ICTO)'];
         flightnumberInput.placeholder = languageMap[currentLanguage]['航班号'];
+        aircraftInput.placeholder = languageMap[currentLanguage]['机型'];
         egmenu.textContent = languageMap[currentLanguage]['|    状态    |    完成时间    |    是否完成    |    花费时间    |'];
         boardtimeInput.placeholder = languageMap[currentLanguage]['例子：| 上机 | 1600 | √ | 60 |'];
         taxitimeInput.placeholder = languageMap[currentLanguage]['例子：| 起飞前滑行 | 1610 | √ | 10 |'];
